@@ -46,6 +46,7 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [accountNotFound, setAccountNotFound] = useState(false);
+  const [otpToken, setOtpToken] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const otpInputsRef = useRef<(HTMLInputElement | null)[]>([]);
@@ -123,6 +124,10 @@ function LoginForm() {
         throw new Error(data.error || "Authentication failed.");
       }
 
+      if (data.token) {
+        setOtpToken(data.token);
+      }
+
       setStep("otp");
       setSuccessMsg("Credentials verified! Please enter your 6-digit 2FA verification code.");
       setResendCooldown(45);
@@ -157,6 +162,10 @@ function LoginForm() {
         throw new Error(data.error || "Failed to resend code");
       }
 
+      if (data.token) {
+        setOtpToken(data.token);
+      }
+
       setSuccessMsg("A fresh 6-digit verification code has been dispatched.");
       setResendCooldown(45);
     } catch (err: unknown) {
@@ -188,6 +197,7 @@ function LoginForm() {
           password,
           fullName: isSignUp ? fullName.trim() : undefined,
           organizationName: isSignUp ? orgName.trim() : undefined,
+          token: otpToken || undefined,
         }),
       });
 
@@ -527,6 +537,13 @@ function LoginForm() {
                   <span>Resend verification code</span>
                 </button>
               )}
+            </div>
+
+            {/* Spam folder helper reminder */}
+            <div className="pt-1 text-center">
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Didn&apos;t see the email? Please check your <strong>Spam</strong> or <strong>Junk</strong> folder.
+              </p>
             </div>
           </div>
         )}

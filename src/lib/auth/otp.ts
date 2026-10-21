@@ -2,6 +2,7 @@ import { Resend } from "resend";
 import nodemailer from "nodemailer";
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 
 interface StoredOtp {
   code: string;
@@ -10,13 +11,51 @@ interface StoredOtp {
   lastSentAt: number;
 }
 
-const DATA_DIR = path.join(process.cwd(), ".data");
-const OTP_FILE = path.join(DATA_DIR, "otps.json");
+const OTP_SECRET = process.env.OTP_SECRET || process.env.RESEND_API_KEY || "realcrm_secure_otp_salt_2026";
+
+export function signOtp(email: string, code: string, expiresAt: number): string {
+  const normalized = email.toLowerCase().trim();
+  const hmac = crypto.createHmac("sha256", OTP_SECRET);
+  hmac.update(`${normalized}:${code}:${expiresAt}`);
+  return `${expiresAt}:${hmac.digest("hex")}`;
+}
+
+export function verifySignedOtp(email: string, submittedCode: string, token: string): boolean {
+  try {
+    const parts = token.split(":");
+    if (parts.length !== 2) return false;
+    const [expiresAtStr, hash] = parts;
+    const expiresAt = Number(expiresAtStr);
+    if (!expiresAt || Date.now() > expiresAt) return false;
+
+    const normalized = email.toLowerCase().trim();
+    const cleanCode = submittedCode.trim();
+    const hmac = crypto.createHmac("sha256", OTP_SECRET);
+    hmac.update(`${normalized}:${cleanCode}:${expiresAt}`);
+    const expectedHash = hmac.digest("hex");
+
+    return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(expectedHash, "hex"));
+  } catch {
+    return false;
+  }
+}
+
+function getDataDir(): string {
+  if (process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.VERCEL) {
+    return path.join("/tmp", ".data");
+  }
+  return path.join(process.cwd(), ".data");
+}
+
+function getOtpFile(): string {
+  return path.join(getDataDir(), "otps.json");
+}
 
 function loadOtpsFromDisk(): Map<string, StoredOtp> {
   try {
-    if (fs.existsSync(OTP_FILE)) {
-      const content = fs.readFileSync(OTP_FILE, "utf-8");
+    const file = getOtpFile();
+    if (fs.existsSync(file)) {
+      const content = fs.readFileSync(file, "utf-8");
       const obj = JSON.parse(content);
       const map = new Map<string, StoredOtp>();
       const now = Date.now();
@@ -34,8 +73,10 @@ function loadOtpsFromDisk(): Map<string, StoredOtp> {
 
 function saveOtpsToDisk(map: Map<string, StoredOtp>) {
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
+    const dir = getDataDir();
+    const file = getOtpFile();
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
     }
     const obj: Record<string, StoredOtp> = {};
     const now = Date.now();
@@ -44,7 +85,7 @@ function saveOtpsToDisk(map: Map<string, StoredOtp>) {
         obj[k] = v;
       }
     }
-    fs.writeFileSync(OTP_FILE, JSON.stringify(obj, null, 2), "utf-8");
+    fs.writeFileSync(file, JSON.stringify(obj, null, 2), "utf-8");
   } catch {}
 }
 
@@ -113,6 +154,7 @@ export async function createAndSendOtp(email: string): Promise<{
   resendId?: string;
   sandboxNotice?: string;
   devOtp?: string;
+  token?: string;
 }> {
   const normalizedEmail = email.toLowerCase().trim();
   const existing = otpStore.get(normalizedEmail);
@@ -125,6 +167,7 @@ export async function createAndSendOtp(email: string): Promise<{
 
   const code = generateOtpCode();
   const expiresAt = Date.now() + OTP_EXPIRY_MS;
+  const token = signOtp(normalizedEmail, code, expiresAt);
 
   otpStore.set(normalizedEmail, {
     code,
@@ -247,6 +290,7 @@ export async function createAndSendOtp(email: string): Promise<{
       message: "A 6-digit verification code has been dispatched.",
       expiresAt,
       devOtp: code,
+      token,
     };
   }
 
@@ -273,6 +317,7 @@ export async function createAndSendOtp(email: string): Promise<{
       message: "A 6-digit verification code has been sent to your email.",
       expiresAt,
       resendId: resendResult.data?.id,
+      token,
     };
   } catch (err: unknown) {
     console.log(`\n🔑 [RealCRM 2FA Backup Code]: ${code} (for ${normalizedEmail})\n`);
@@ -287,11 +332,21 @@ export async function createAndSendOtp(email: string): Promise<{
  */
 export function verifyOtpCode(
   email: string,
-  submittedCode: string
+  submittedCode: string,
+  token?: string
 ): { valid: boolean; reason?: string } {
   const normalizedEmail = email.toLowerCase().trim();
   const cleanCode = submittedCode.trim();
 
+  // 1. Try stateless cryptographic HMAC token verification first
+  if (token) {
+    const isValidToken = verifySignedOtp(normalizedEmail, cleanCode, token);
+    if (isValidToken) {
+      return { valid: true };
+    }
+  }
+
+  // 2. In-memory & disk fallback
   let stored = otpStore.get(normalizedEmail);
   if (!stored) {
     const diskMap = loadOtpsFromDisk();
@@ -302,6 +357,12 @@ export function verifyOtpCode(
   }
 
   if (!stored) {
+    if (token) {
+      return {
+        valid: false,
+        reason: "Invalid verification code. Please check your code or request a new one.",
+      };
+    }
     return {
       valid: false,
       reason: "No active verification code found for this email. Please request a new code.",

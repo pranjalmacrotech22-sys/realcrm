@@ -33,11 +33,15 @@ export interface RegisteredAccount {
 }
 
 function getDbFilePath(): string {
+  const isServerless = !!(process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.VERCEL);
   const path = getPath();
   if (path) {
+    if (isServerless) {
+      return path.join("/tmp", ".data", "db.json");
+    }
     return path.join(process.cwd(), ".data", "db.json");
   }
-  return "./.data/db.json";
+  return isServerless ? "/tmp/.data/db.json" : "./.data/db.json";
 }
 
 function getFs() {

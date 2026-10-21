@@ -73,11 +73,24 @@ export async function POST(request: NextRequest) {
     // Send 6-digit OTP code to email
     const result = await createAndSendOtp(cleanEmail);
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       message: result.message,
       expiresAt: result.expiresAt,
+      token: result.token,
     });
+
+    if (result.token) {
+      response.cookies.set("realcrm_otp_challenge", result.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: 600, // 10 minutes
+      });
+    }
+
+    return response;
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to send verification code";
     return NextResponse.json({ error: message }, { status: 400 });

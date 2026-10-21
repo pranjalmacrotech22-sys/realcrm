@@ -8,7 +8,7 @@ import { UserRole } from "@/types";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { email, code, fullName, organizationName, password } = body;
+    const { email, code, fullName, organizationName, password, token: clientChallengeToken } = body;
 
     if (!email || !code) {
       return NextResponse.json(
@@ -17,7 +17,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const verification = verifyOtpCode(email, code);
+    const cookieToken = request.cookies.get("realcrm_otp_challenge")?.value;
+    const challengeToken = clientChallengeToken || cookieToken;
+
+    const verification = verifyOtpCode(email, code, challengeToken);
 
     if (!verification.valid) {
       return NextResponse.json(
