@@ -42,12 +42,19 @@ export function toValidUuid(input?: string): string {
   return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
 }
 
+// In-memory cache of already verified organization UUIDs to avoid blocking upserts on every navigation
+const verifiedOrgUuids = new Set<string>();
+
 /**
  * Ensure organization exists in Supabase so foreign key constraints are satisfied
  */
 export async function ensureSupabaseOrg(orgId: string, orgName: string): Promise<string> {
-  const supabase = getSupabase();
   const orgUuid = toValidUuid(orgId);
+  if (verifiedOrgUuids.has(orgUuid)) {
+    return orgUuid;
+  }
+
+  const supabase = getSupabase();
   if (!supabase) return orgUuid;
 
   try {
@@ -61,7 +68,9 @@ export async function ensureSupabaseOrg(orgId: string, orgName: string): Promise
       },
       { onConflict: "id" }
     );
-    if (error) {
+    if (!error) {
+      verifiedOrgUuids.add(orgUuid);
+    } else {
       console.warn("Notice on Supabase org upsert:", error.message);
     }
   } catch (err) {

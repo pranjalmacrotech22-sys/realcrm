@@ -48,6 +48,12 @@ export function Sidebar({
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const [navigatingHref, setNavigatingHref] = useState<string | null>(null);
+
+  useEffect(() => {
+    setNavigatingHref(null);
+  }, [pathname]);
+
   // Close modals on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -143,7 +149,11 @@ export function Sidebar({
         <div className="p-3">
           <Link
             href="/properties/new"
-            onClick={() => setMobileOpen(false)}
+            prefetch={true}
+            onClick={() => {
+              setMobileOpen(false);
+              setNavigatingHref("/properties/new");
+            }}
             className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-semibold shadow-xs shadow-blue-600/25 transition-all cursor-pointer"
           >
             <PlusCircle className="w-4 h-4" />
@@ -160,10 +170,12 @@ export function Sidebar({
 
         <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto">
           {navigation.map((item) => {
-            const isActive =
+            const isCurrent =
               item.href === "/dashboard"
                 ? pathname === "/dashboard"
                 : pathname.startsWith(item.href);
+            const isActive = isCurrent || navigatingHref === item.href;
+            const isPending = navigatingHref === item.href && !isCurrent;
 
             const Icon = item.icon;
 
@@ -171,7 +183,11 @@ export function Sidebar({
               <Link
                 key={item.name}
                 href={item.href}
-                onClick={() => setMobileOpen(false)}
+                prefetch={true}
+                onClick={() => {
+                  setMobileOpen(false);
+                  setNavigatingHref(item.href);
+                }}
                 className={cn(
                   "flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all group",
                   isActive
@@ -185,7 +201,8 @@ export function Sidebar({
                       "w-4 h-4 transition-colors",
                       isActive
                         ? "text-blue-600"
-                        : "text-slate-400 group-hover:text-slate-600"
+                        : "text-slate-400 group-hover:text-slate-600",
+                      isPending && "animate-spin"
                     )}
                   />
                   <span>{item.name}</span>

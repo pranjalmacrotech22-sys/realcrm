@@ -422,6 +422,30 @@ export async function updateMemberRole(
   return member;
 }
 
+// In-memory sync timestamps to avoid redundant remote Supabase round-trips on every navigation
+const syncTimestamps: Record<string, number> = {};
+const SYNC_CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
+export function invalidateSyncCache(orgId?: string) {
+  if (orgId) {
+    delete syncTimestamps[`prop-${orgId}`];
+    delete syncTimestamps[`cust-${orgId}`];
+    delete syncTimestamps[`req-${orgId}`];
+  } else {
+    for (const k of Object.keys(syncTimestamps)) {
+      delete syncTimestamps[k];
+    }
+  }
+}
+
+async function quickSync<T>(promiseFn: () => Promise<T>, timeoutMs = 450): Promise<T | null> {
+  let timer: NodeJS.Timeout;
+  const timeoutPromise = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), timeoutMs);
+  });
+  return Promise.race([promiseFn(), timeoutPromise]).finally(() => clearTimeout(timer));
+}
+
 // ============================================================================
 // PROPERTIES (Strict Tenant Isolation)
 // ============================================================================
@@ -431,21 +455,26 @@ export async function getProperties(filters: PropertyFilters = {}): Promise<{
 }> {
   const { orgId } = await resolveCurrentOrgId();
 
-  // Sync latest from Supabase if configured
-  try {
-    const remote = await fetchPropertiesFromSupabase(orgId);
-    if (remote && remote.length > 0) {
-      for (const r of remote) {
-        const idx = store.properties.findIndex((p) => p.id === r.id);
-        if (idx === -1) {
-          store.properties.push(r);
-        } else {
-          store.properties[idx] = { ...store.properties[idx], ...r };
+  // Sync latest from Supabase if cache is cold or expired (with fast 450ms timeout protection)
+  const cacheKey = `prop-${orgId}`;
+  const now = Date.now();
+  if (!syncTimestamps[cacheKey] || now - syncTimestamps[cacheKey] > SYNC_CACHE_TTL_MS) {
+    syncTimestamps[cacheKey] = now;
+    try {
+      const remote = await quickSync(() => fetchPropertiesFromSupabase(orgId), 450);
+      if (remote && remote.length > 0) {
+        for (const r of remote) {
+          const idx = store.properties.findIndex((p) => p.id === r.id);
+          if (idx === -1) {
+            store.properties.push(r);
+          } else {
+            store.properties[idx] = { ...store.properties[idx], ...r };
+          }
         }
+        saveToDisk(store);
       }
-      saveToDisk(store);
-    }
-  } catch {}
+    } catch {}
+  }
 
   let list = store.properties.filter((p) => {
     // Strict organization boundary
@@ -681,6 +710,7 @@ export async function createProperty(data: Omit<Property, "id" | "created_at" | 
 
   store.properties.unshift(newProp);
   saveToDisk(store);
+  invalidateSyncCache(newProp.organization_id);
 
   // Sync to Supabase
   try {
@@ -715,6 +745,7 @@ export async function updateProperty(id: string, data: Partial<Property>): Promi
 
   store.properties[index] = updated;
   saveToDisk(store);
+  invalidateSyncCache(orgId);
 
   try {
     await savePropertyToSupabase(updated);
@@ -740,6 +771,7 @@ export async function archiveProperty(id: string): Promise<boolean> {
   prop.archived_at = new Date().toISOString();
   prop.updated_at = new Date().toISOString();
   saveToDisk(store);
+  invalidateSyncCache(orgId);
 
   try {
     await savePropertyToSupabase(prop);
@@ -762,6 +794,7 @@ export async function deleteProperty(id: string): Promise<boolean> {
 
   store.properties.splice(index, 1);
   saveToDisk(store);
+  invalidateSyncCache(orgId);
 
   try {
     await deletePropertyFromSupabase(id, orgId);
@@ -776,20 +809,26 @@ export async function deleteProperty(id: string): Promise<boolean> {
 export async function getCustomers(): Promise<Customer[]> {
   const { orgId } = await resolveCurrentOrgId();
 
-  try {
-    const remote = await fetchCustomersFromSupabase(orgId);
-    if (remote && remote.length > 0) {
-      for (const r of remote) {
-        const idx = store.customers.findIndex((c) => c.id === r.id);
-        if (idx === -1) {
-          store.customers.push(r);
-        } else {
-          store.customers[idx] = { ...store.customers[idx], ...r };
+  // Sync latest from Supabase if cache is cold or expired (with fast 450ms timeout protection)
+  const cacheKey = `cust-${orgId}`;
+  const now = Date.now();
+  if (!syncTimestamps[cacheKey] || now - syncTimestamps[cacheKey] > SYNC_CACHE_TTL_MS) {
+    syncTimestamps[cacheKey] = now;
+    try {
+      const remote = await quickSync(() => fetchCustomersFromSupabase(orgId), 450);
+      if (remote && remote.length > 0) {
+        for (const r of remote) {
+          const idx = store.customers.findIndex((c) => c.id === r.id);
+          if (idx === -1) {
+            store.customers.push(r);
+          } else {
+            store.customers[idx] = { ...store.customers[idx], ...r };
+          }
         }
+        saveToDisk(store);
       }
-      saveToDisk(store);
-    }
-  } catch {}
+    } catch {}
+  }
 
   const activeCustomers = store.customers.filter((c) => c.organization_id === orgId && !c.archived_at);
 
@@ -832,6 +871,7 @@ export async function createCustomer(data: Omit<Customer, "id" | "created_at" | 
 
   store.customers.unshift(newCust);
   saveToDisk(store);
+  invalidateSyncCache(newCust.organization_id);
 
   try {
     await saveCustomerToSupabase(newCust);
@@ -861,6 +901,7 @@ export async function updateCustomer(id: string, data: Partial<Customer>): Promi
   };
 
   saveToDisk(store);
+  invalidateSyncCache(orgId);
 
   try {
     await saveCustomerToSupabase(store.customers[index]);
@@ -875,20 +916,26 @@ export async function updateCustomer(id: string, data: Partial<Customer>): Promi
 export async function getRequirements(customerId?: string): Promise<Requirement[]> {
   const { orgId } = await resolveCurrentOrgId();
 
-  try {
-    const remote = await fetchRequirementsFromSupabase(orgId);
-    if (remote && remote.length > 0) {
-      for (const r of remote) {
-        const idx = store.requirements.findIndex((req) => req.id === r.id);
-        if (idx === -1) {
-          store.requirements.push(r);
-        } else {
-          store.requirements[idx] = { ...store.requirements[idx], ...r };
+  // Sync latest from Supabase if cache is cold or expired (with fast 450ms timeout protection)
+  const cacheKey = `req-${orgId}`;
+  const now = Date.now();
+  if (!syncTimestamps[cacheKey] || now - syncTimestamps[cacheKey] > SYNC_CACHE_TTL_MS) {
+    syncTimestamps[cacheKey] = now;
+    try {
+      const remote = await quickSync(() => fetchRequirementsFromSupabase(orgId), 450);
+      if (remote && remote.length > 0) {
+        for (const r of remote) {
+          const idx = store.requirements.findIndex((req) => req.id === r.id);
+          if (idx === -1) {
+            store.requirements.push(r);
+          } else {
+            store.requirements[idx] = { ...store.requirements[idx], ...r };
+          }
         }
+        saveToDisk(store);
       }
-      saveToDisk(store);
-    }
-  } catch {}
+    } catch {}
+  }
 
   let list = store.requirements.filter((r) => r.organization_id === orgId);
   if (customerId) {
@@ -927,6 +974,7 @@ export async function createRequirement(data: Omit<Requirement, "id" | "created_
 
   store.requirements.unshift(newReq);
   saveToDisk(store);
+  invalidateSyncCache(newReq.organization_id);
 
   try {
     await saveRequirementToSupabase(newReq);
