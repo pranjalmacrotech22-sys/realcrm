@@ -12,8 +12,10 @@ import { formatDate } from "@/lib/utils";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 
 export default async function SettingsPage() {
-  const org = await getActiveOrganization();
-  const { total } = await getProperties({ limit: 1 });
+  const [org, { total }] = await Promise.all([
+    getActiveOrganization(),
+    getProperties({ limit: 1 }),
+  ]);
   const liveSupabase = isSupabaseConfigured();
 
   return (

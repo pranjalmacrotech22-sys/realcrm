@@ -46,6 +46,7 @@ export function Header({
         {/* Quick Requirement Action */}
         <Link
           href="/requirements/new"
+          prefetch={true}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-700 bg-slate-100/90 hover:bg-slate-200/80 border border-slate-200/60 transition shadow-2xs"
         >
           <Sparkles className="w-3.5 h-3.5 text-blue-600" />
@@ -55,6 +56,7 @@ export function Header({
         {/* Quick Property Add Action */}
         <Link
           href="/properties/new"
+          prefetch={true}
           className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition shadow-xs shadow-blue-500/20"
         >
           <Plus className="w-3.5 h-3.5" />

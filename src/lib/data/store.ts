@@ -193,9 +193,8 @@ export function setActiveWorkspace(
       updated_at: new Date().toISOString(),
     });
     saveToDisk(store);
+    ensureSupabaseOrg(activeWorkspaceId, activeWorkspaceName).catch(() => {});
   }
-
-  ensureSupabaseOrg(activeWorkspaceId, activeWorkspaceName).catch(() => {});
 }
 
 async function getServerSessionSafe(): Promise<{
@@ -438,12 +437,66 @@ export function invalidateSyncCache(orgId?: string) {
   }
 }
 
-async function quickSync<T>(promiseFn: () => Promise<T>, timeoutMs = 450): Promise<T | null> {
+async function quickSync<T>(promiseFn: () => Promise<T>, timeoutMs = 800): Promise<T | null> {
   let timer: NodeJS.Timeout;
   const timeoutPromise = new Promise<null>((resolve) => {
     timer = setTimeout(() => resolve(null), timeoutMs);
   });
   return Promise.race([promiseFn(), timeoutPromise]).finally(() => clearTimeout(timer));
+}
+
+function revalidatePropertiesInBackground(orgId: string) {
+  fetchPropertiesFromSupabase(orgId)
+    .then((remote) => {
+      if (remote && remote.length > 0) {
+        for (const r of remote) {
+          const idx = store.properties.findIndex((p) => p.id === r.id);
+          if (idx === -1) {
+            store.properties.push(r);
+          } else {
+            store.properties[idx] = { ...store.properties[idx], ...r };
+          }
+        }
+        saveToDisk(store);
+      }
+    })
+    .catch(() => {});
+}
+
+function revalidateCustomersInBackground(orgId: string) {
+  fetchCustomersFromSupabase(orgId)
+    .then((remote) => {
+      if (remote && remote.length > 0) {
+        for (const r of remote) {
+          const idx = store.customers.findIndex((c) => c.id === r.id);
+          if (idx === -1) {
+            store.customers.push(r);
+          } else {
+            store.customers[idx] = { ...store.customers[idx], ...r };
+          }
+        }
+        saveToDisk(store);
+      }
+    })
+    .catch(() => {});
+}
+
+function revalidateRequirementsInBackground(orgId: string) {
+  fetchRequirementsFromSupabase(orgId)
+    .then((remote) => {
+      if (remote && remote.length > 0) {
+        for (const r of remote) {
+          const idx = store.requirements.findIndex((req) => req.id === r.id);
+          if (idx === -1) {
+            store.requirements.push(r);
+          } else {
+            store.requirements[idx] = { ...store.requirements[idx], ...r };
+          }
+        }
+        saveToDisk(store);
+      }
+    })
+    .catch(() => {});
 }
 
 // ============================================================================
@@ -455,13 +508,21 @@ export async function getProperties(filters: PropertyFilters = {}): Promise<{
 }> {
   const { orgId } = await resolveCurrentOrgId();
 
-  // Sync latest from Supabase if cache is cold or expired (with fast 450ms timeout protection)
+  // Stale-While-Revalidate: If data exists locally, return in 0ms and sync in background
   const cacheKey = `prop-${orgId}`;
   const now = Date.now();
-  if (!syncTimestamps[cacheKey] || now - syncTimestamps[cacheKey] > SYNC_CACHE_TTL_MS) {
+  const hasLocal = store.properties.some((p) => p.organization_id === orgId);
+  const cacheExpired = !syncTimestamps[cacheKey] || now - syncTimestamps[cacheKey] > SYNC_CACHE_TTL_MS;
+
+  if (hasLocal) {
+    if (cacheExpired) {
+      syncTimestamps[cacheKey] = now;
+      revalidatePropertiesInBackground(orgId);
+    }
+  } else if (cacheExpired) {
     syncTimestamps[cacheKey] = now;
     try {
-      const remote = await quickSync(() => fetchPropertiesFromSupabase(orgId), 450);
+      const remote = await quickSync(() => fetchPropertiesFromSupabase(orgId), 1200);
       if (remote && remote.length > 0) {
         for (const r of remote) {
           const idx = store.properties.findIndex((p) => p.id === r.id);
@@ -809,13 +870,21 @@ export async function deleteProperty(id: string): Promise<boolean> {
 export async function getCustomers(): Promise<Customer[]> {
   const { orgId } = await resolveCurrentOrgId();
 
-  // Sync latest from Supabase if cache is cold or expired (with fast 450ms timeout protection)
+  // Stale-While-Revalidate: Return immediately (0ms) and sync in background if cache expired
   const cacheKey = `cust-${orgId}`;
   const now = Date.now();
-  if (!syncTimestamps[cacheKey] || now - syncTimestamps[cacheKey] > SYNC_CACHE_TTL_MS) {
+  const hasLocal = store.customers.some((c) => c.organization_id === orgId);
+  const cacheExpired = !syncTimestamps[cacheKey] || now - syncTimestamps[cacheKey] > SYNC_CACHE_TTL_MS;
+
+  if (hasLocal) {
+    if (cacheExpired) {
+      syncTimestamps[cacheKey] = now;
+      revalidateCustomersInBackground(orgId);
+    }
+  } else if (cacheExpired) {
     syncTimestamps[cacheKey] = now;
     try {
-      const remote = await quickSync(() => fetchCustomersFromSupabase(orgId), 450);
+      const remote = await quickSync(() => fetchCustomersFromSupabase(orgId), 1200);
       if (remote && remote.length > 0) {
         for (const r of remote) {
           const idx = store.customers.findIndex((c) => c.id === r.id);
@@ -916,13 +985,21 @@ export async function updateCustomer(id: string, data: Partial<Customer>): Promi
 export async function getRequirements(customerId?: string): Promise<Requirement[]> {
   const { orgId } = await resolveCurrentOrgId();
 
-  // Sync latest from Supabase if cache is cold or expired (with fast 450ms timeout protection)
+  // Stale-While-Revalidate: Return immediately (0ms) and sync in background if cache expired
   const cacheKey = `req-${orgId}`;
   const now = Date.now();
-  if (!syncTimestamps[cacheKey] || now - syncTimestamps[cacheKey] > SYNC_CACHE_TTL_MS) {
+  const hasLocal = store.requirements.some((r) => r.organization_id === orgId);
+  const cacheExpired = !syncTimestamps[cacheKey] || now - syncTimestamps[cacheKey] > SYNC_CACHE_TTL_MS;
+
+  if (hasLocal) {
+    if (cacheExpired) {
+      syncTimestamps[cacheKey] = now;
+      revalidateRequirementsInBackground(orgId);
+    }
+  } else if (cacheExpired) {
     syncTimestamps[cacheKey] = now;
     try {
-      const remote = await quickSync(() => fetchRequirementsFromSupabase(orgId), 450);
+      const remote = await quickSync(() => fetchRequirementsFromSupabase(orgId), 1200);
       if (remote && remote.length > 0) {
         for (const r of remote) {
           const idx = store.requirements.findIndex((req) => req.id === r.id);

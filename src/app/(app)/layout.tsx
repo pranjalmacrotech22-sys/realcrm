@@ -1,5 +1,7 @@
+import { Suspense } from "react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
+import { NavProgressBar } from "@/components/layout/nav-progress-bar";
 import { getSession } from "@/lib/auth/session";
 import { setActiveWorkspace } from "@/lib/data/store";
 
@@ -27,6 +29,9 @@ export default async function AppLayout({
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex">
+      <Suspense fallback={null}>
+        <NavProgressBar />
+      </Suspense>
       <Sidebar
         organizationName={orgName}
         userName={userName}

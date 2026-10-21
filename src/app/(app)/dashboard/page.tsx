@@ -50,6 +50,7 @@ export default async function DashboardPage() {
           <div className="flex flex-wrap items-center gap-2.5">
             <Link
               href="/properties/new"
+              prefetch={true}
               className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition shadow-sm shadow-blue-500/30 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
@@ -57,6 +58,7 @@ export default async function DashboardPage() {
             </Link>
             <Link
               href="/requirements/new"
+              prefetch={true}
               className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-white/10 hover:bg-white/15 text-white border border-white/20 transition backdrop-blur-xs cursor-pointer"
             >
               <Sparkles className="w-4 h-4 text-blue-400" />
@@ -111,7 +113,7 @@ export default async function DashboardPage() {
           </div>
           <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between text-[11px] text-slate-500 font-medium">
             <span>Buyers & Tenants</span>
-            <Link href="/customers" className="text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-0.5">
+            <Link href="/customers" prefetch={true} className="text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-0.5">
               <span>Directory</span>
               <ArrowRight className="w-3 h-3" />
             </Link>
@@ -139,7 +141,7 @@ export default async function DashboardPage() {
           </div>
           <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between text-[11px] text-slate-500 font-medium">
             <span>Instant Matching</span>
-            <Link href="/requirements" className="text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-0.5">
+            <Link href="/requirements" prefetch={true} className="text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-0.5">
               <span>View list</span>
               <ArrowRight className="w-3 h-3" />
             </Link>
@@ -166,7 +168,7 @@ export default async function DashboardPage() {
           </div>
           <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between text-[11px] text-slate-500 font-medium">
             <span>Site Visits & Calls</span>
-            <Link href="/follow-ups" className="text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-0.5">
+            <Link href="/follow-ups" prefetch={true} className="text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-0.5">
               <span>Calendar</span>
               <ArrowRight className="w-3 h-3" />
             </Link>
@@ -246,7 +248,7 @@ export default async function DashboardPage() {
               <MapPin className="w-4 h-4 text-blue-600" />
               <span>Micro-Market Distribution by Sector</span>
             </h2>
-            <Link href="/properties" className="text-xs text-blue-600 font-semibold hover:underline">
+            <Link href="/properties" prefetch={true} className="text-xs text-blue-600 font-semibold hover:underline">
               Filter inventory →
             </Link>
           </div>
@@ -291,6 +293,7 @@ export default async function DashboardPage() {
             </h2>
             <Link
               href="/properties"
+              prefetch={true}
               className="text-xs text-blue-600 font-semibold hover:underline flex items-center gap-1"
             >
               <span>View all</span>
@@ -309,6 +312,7 @@ export default async function DashboardPage() {
                 </p>
                 <Link
                   href="/properties/new"
+                  prefetch={true}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -336,6 +340,7 @@ export default async function DashboardPage() {
                       </div>
                       <Link
                         href={`/properties/${prop.id}`}
+                        prefetch={true}
                         className="block text-sm font-semibold text-slate-900 mt-1 hover:text-blue-600 truncate"
                       >
                         {prop.title}
@@ -374,6 +379,7 @@ export default async function DashboardPage() {
             </h2>
             <Link
               href="/follow-ups"
+              prefetch={true}
               className="text-xs text-blue-600 font-semibold hover:underline flex items-center gap-1"
             >
               <span>Schedule</span>

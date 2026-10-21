@@ -13,10 +13,12 @@ interface FollowUpsPageProps {
 export default async function FollowUpsPage({ searchParams }: FollowUpsPageProps) {
   const { newForCustomerId, newForRequirementId } = await searchParams;
 
-  const followUps = await getFollowUps();
-  const customers = await getCustomers();
-  const { properties } = await getProperties({ limit: 100 });
-  const requirements = await getRequirements();
+  const [followUps, customers, { properties }, requirements] = await Promise.all([
+    getFollowUps(),
+    getCustomers(),
+    getProperties({ limit: 100 }),
+    getRequirements(),
+  ]);
 
   return (
     <FollowUpView
