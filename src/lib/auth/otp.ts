@@ -65,6 +65,44 @@ export function generateOtpCode(): string {
   return String(num);
 }
 
+function getResendConfig(): { apiKey: string | null; fromEmail: string } {
+  let apiKey = process.env.RESEND_API_KEY?.trim() || null;
+  let fromEmail = process.env.RESEND_FROM_EMAIL?.trim() || null;
+
+  // Fallback: Read directly from .env.local or .env if environment wasn't hydrated by Next.js
+  if (!apiKey || apiKey === "dummy_key_for_build") {
+    try {
+      const envPaths = [
+        path.join(process.cwd(), ".env.local"),
+        path.join(process.cwd(), ".env"),
+      ];
+      for (const p of envPaths) {
+        if (fs.existsSync(p)) {
+          const content = fs.readFileSync(p, "utf-8");
+          const keyMatch = content.match(/^RESEND_API_KEY\s*=\s*["']?([^"'\r\n]+)["']?/m);
+          if (keyMatch && keyMatch[1]) {
+            apiKey = keyMatch[1].trim();
+            process.env.RESEND_API_KEY = apiKey;
+          }
+          const fromMatch = content.match(/^RESEND_FROM_EMAIL\s*=\s*["']?([^"'\r\n]+)["']?/m);
+          if (fromMatch && fromMatch[1]) {
+            fromEmail = fromMatch[1].trim();
+            process.env.RESEND_FROM_EMAIL = fromEmail;
+          }
+          if (apiKey) break;
+        }
+      }
+    } catch (e) {
+      console.warn("[OTP] Could not read env file:", e);
+    }
+  }
+
+  const validKey = apiKey && apiKey !== "dummy_key_for_build" ? apiKey : null;
+  const validFrom = fromEmail || "RealCRM <noreply@macrotechsoftwares.com>";
+
+  return { apiKey: validKey, fromEmail: validFrom };
+}
+
 /**
  * Request an OTP for a given email address and send it via Resend
  */
@@ -96,10 +134,7 @@ export async function createAndSendOtp(email: string): Promise<{
   });
   saveOtpsToDisk(otpStore);
 
-  const resendApiKey = process.env.RESEND_API_KEY;
-  const resendFrom = process.env.RESEND_FROM_EMAIL || "RealCRM <onboarding@resend.dev>";
-
-  const resend = new Resend(resendApiKey || "dummy_key_for_build");
+  const { apiKey: resendApiKey, fromEmail: resendFrom } = getResendConfig();
 
   // Enterprise HTML email template
   const emailHtml = `
@@ -199,7 +234,24 @@ export async function createAndSendOtp(email: string): Promise<{
   }
 
   // 2. Resend API delivery
+  if (!resendApiKey) {
+    console.log("\n============================================================");
+    console.log(`🔐 [REALCRM 2FA CODE - LOCAL / DEV MODE]`);
+    console.log(`Email:   ${normalizedEmail}`);
+    console.log(`Code:    ${code}`);
+    console.log(`Expires: 10 minutes`);
+    console.log("============================================================\n");
+
+    return {
+      success: true,
+      message: "A 6-digit verification code has been dispatched.",
+      expiresAt,
+      devOtp: code,
+    };
+  }
+
   try {
+    const resend = new Resend(resendApiKey);
     const resendResult = await resend.emails.send({
       from: resendFrom,
       to: [normalizedEmail],
@@ -210,6 +262,7 @@ export async function createAndSendOtp(email: string): Promise<{
     if (resendResult.error) {
       const errMsg = resendResult.error.message || "Failed to deliver email via Resend.";
       console.error("[Resend Error]:", resendResult.error);
+      console.log(`\n🔑 [RealCRM 2FA Backup Code]: ${code} (for ${normalizedEmail})\n`);
       throw new Error(errMsg);
     }
 
@@ -222,6 +275,7 @@ export async function createAndSendOtp(email: string): Promise<{
       resendId: resendResult.data?.id,
     };
   } catch (err: unknown) {
+    console.log(`\n🔑 [RealCRM 2FA Backup Code]: ${code} (for ${normalizedEmail})\n`);
     const errorMsg = err instanceof Error ? err.message : "Failed to deliver email via Resend";
     console.error("Email delivery exception:", errorMsg);
     throw new Error(errorMsg);

@@ -45,6 +45,7 @@ function LoginForm() {
   // Status states
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [accountNotFound, setAccountNotFound] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const otpInputsRef = useRef<(HTMLInputElement | null)[]>([]);
@@ -69,6 +70,7 @@ function LoginForm() {
   async function handleCredentialsSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setAccountNotFound(false);
     setSuccessMsg(null);
 
     const cleanEmail = email.trim().toLowerCase();
@@ -115,6 +117,9 @@ function LoginForm() {
       const data = await res.json();
 
       if (!res.ok) {
+        if (res.status === 404 || data.code === "ACCOUNT_NOT_FOUND") {
+          setAccountNotFound(true);
+        }
         throw new Error(data.error || "Authentication failed.");
       }
 
@@ -141,7 +146,9 @@ function LoginForm() {
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           password,
-          isSignUp: false,
+          isSignUp,
+          fullName: isSignUp ? fullName.trim() : undefined,
+          organizationName: isSignUp ? orgName.trim() : undefined,
         }),
       });
 
@@ -274,9 +281,25 @@ function LoginForm() {
 
         {/* Error Banner */}
         {error && (
-          <div className="mb-5 p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2.5">
+          <div className="mb-5 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2.5">
             <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-            <span className="leading-snug">{error}</span>
+            <div className="flex-1">
+              <span className="leading-snug block">{error}</span>
+              {accountNotFound && !isSignUp && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSignUp(true);
+                    setError(null);
+                    setAccountNotFound(false);
+                  }}
+                  className="mt-2 inline-flex items-center gap-1 font-semibold text-blue-700 hover:text-blue-900 underline cursor-pointer"
+                >
+                  <span>Click here to register your workspace now</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
         )}
 

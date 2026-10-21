@@ -50,7 +50,10 @@ export async function POST(request: NextRequest) {
       // Sign-in flow: check if account exists
       if (!existing) {
         return NextResponse.json(
-          { error: "No account found for this email. Please click 'Register new company workspace' below." },
+          {
+            error: "No account found for this email. Please click 'Register Workspace' to create your account.",
+            code: "ACCOUNT_NOT_FOUND",
+          },
           { status: 404 }
         );
       }
