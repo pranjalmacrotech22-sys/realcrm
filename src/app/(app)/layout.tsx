@@ -5,6 +5,9 @@ import { NavProgressBar } from "@/components/layout/nav-progress-bar";
 import { getSession } from "@/lib/auth/session";
 import { setActiveWorkspace } from "@/lib/data/store";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function AppLayout({
   children,
 }: {

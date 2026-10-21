@@ -119,6 +119,10 @@ export function RequirementForm({ customers, defaultCustomerId }: RequirementFor
         throw new Error(result.error || "Failed to create requirement");
       }
 
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("realcrm:refresh"));
+      }
+
       // Directly navigate to smart matching view!
       router.push(`/matches/${result.requirement.id}`);
       router.refresh();

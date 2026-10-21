@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { getPropertyById, updateProperty, archiveProperty } from "@/lib/data/store";
 import { propertySchema } from "@/lib/validations";
 
@@ -45,6 +46,11 @@ export async function PATCH(
       return NextResponse.json({ error: "Property not found or unauthorized" }, { status: 404 });
     }
 
+    revalidatePath("/properties");
+    revalidatePath(`/properties/${id}`);
+    revalidatePath("/dashboard");
+    revalidatePath("/");
+
     return NextResponse.json({
       success: true,
       property: updated,
@@ -66,6 +72,11 @@ export async function DELETE(
     if (!archived) {
       return NextResponse.json({ error: "Property not found or unauthorized" }, { status: 404 });
     }
+
+    revalidatePath("/properties");
+    revalidatePath(`/properties/${id}`);
+    revalidatePath("/dashboard");
+    revalidatePath("/");
 
     return NextResponse.json({ success: true });
   } catch (err: unknown) {

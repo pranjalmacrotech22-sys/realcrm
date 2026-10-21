@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   CalendarCheck,
@@ -15,7 +16,6 @@ import {
 } from "lucide-react";
 import { FollowUp, Customer, Property, Requirement } from "@/types";
 import { formatDate, formatDateTime } from "@/lib/utils";
-import { toggleFollowUpStatus, createFollowUp } from "@/lib/data/store";
 
 interface FollowUpViewProps {
   initialFollowUps: FollowUp[];
@@ -34,11 +34,24 @@ export function FollowUpView({
   defaultCustomerId,
   defaultRequirementId,
 }: FollowUpViewProps) {
+  const router = useRouter();
   const [followUps, setFollowUps] = useState<FollowUp[]>(initialFollowUps);
   const [statusFilter, setStatusFilter] = useState<string>("pending");
   const [showCreateModal, setShowCreateModal] = useState(
     Boolean(defaultCustomerId || defaultRequirementId)
   );
+
+  // Sync state whenever server re-renders or props change
+  useEffect(() => {
+    setFollowUps(initialFollowUps);
+  }, [initialFollowUps]);
+
+  // Listen for global mutation events across the app
+  useEffect(() => {
+    const handler = () => router.refresh();
+    window.addEventListener("realcrm:refresh", handler);
+    return () => window.removeEventListener("realcrm:refresh", handler);
+  }, [router]);
 
   // New follow-up fields
   const [customerId, setCustomerId] = useState(defaultCustomerId || customers[0]?.id || "");
@@ -58,13 +71,30 @@ export function FollowUpView({
 
   async function handleToggleStatus(id: string, current: string) {
     const nextStatus = current === "completed" ? "pending" : "completed";
+    // Immediate optimistic state reflection
+    setFollowUps((prev) =>
+      prev.map((f) => (f.id === id ? { ...f, status: nextStatus as any } : f))
+    );
+
     try {
-      const updated = await toggleFollowUpStatus(id, nextStatus as any);
-      if (updated) {
-        setFollowUps(followUps.map((f) => (f.id === id ? { ...f, status: nextStatus as any } : f)));
+      const res = await fetch(`/api/follow-ups/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      if (res.ok) {
+        window.dispatchEvent(new CustomEvent("realcrm:refresh"));
+        router.refresh();
+      } else {
+        // Rollback on server error
+        setFollowUps((prev) =>
+          prev.map((f) => (f.id === id ? { ...f, status: current as any } : f))
+        );
       }
     } catch {
-      // Non-blocking
+      setFollowUps((prev) =>
+        prev.map((f) => (f.id === id ? { ...f, status: current as any } : f))
+      );
     }
   }
 
@@ -74,29 +104,42 @@ export function FollowUpView({
     setLoading(true);
 
     try {
-      const created = await createFollowUp({
-        organization_id: "",
-        customer_id: customerId,
-        requirement_id: requirementId || null,
-        property_id: propertyId || null,
-        title: title.trim(),
-        due_at: new Date(dueDate).toISOString(),
-        status: "pending",
-        notes: notes.trim() || null,
+      const res = await fetch("/api/follow-ups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_id: customerId,
+          requirement_id: requirementId || null,
+          property_id: propertyId || null,
+          title: title.trim(),
+          due_at: new Date(dueDate).toISOString(),
+          status: "pending",
+          notes: notes.trim() || null,
+        }),
       });
 
-      setFollowUps([
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to create follow-up");
+      }
+
+      const created = data.followUp;
+      setFollowUps((prev) => [
         {
           ...created,
           customer: customers.find((c) => c.id === customerId),
           property: properties.find((p) => p.id === propertyId),
         },
-        ...followUps,
+        ...prev,
       ]);
 
       setShowCreateModal(false);
       setTitle("");
       setNotes("");
+      window.dispatchEvent(new CustomEvent("realcrm:refresh"));
+      router.refresh();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Error creating follow-up");
     } finally {
       setLoading(false);
     }

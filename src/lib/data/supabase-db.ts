@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { createHash, randomUUID } from "crypto";
-import { Property, Customer, Requirement, Organization } from "@/types";
+import { Property, Customer, Requirement, Organization, FollowUp } from "@/types";
 
 let cachedClient: SupabaseClient | null = null;
 
@@ -449,3 +449,83 @@ export async function fetchRequirementsFromSupabase(orgId: string): Promise<Requ
     return null;
   }
 }
+
+/**
+ * Save follow-up directly to Supabase PostgreSQL database
+ */
+export async function saveFollowUpToSupabase(followUp: FollowUp): Promise<boolean> {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+
+  try {
+    const orgUuid = await ensureSupabaseOrg(followUp.organization_id, "Workspace");
+    const followUpUuid = toValidUuid(followUp.id);
+    const customerUuid = toValidUuid(followUp.customer_id);
+
+    const payload = {
+      id: followUpUuid,
+      organization_id: orgUuid,
+      customer_id: customerUuid,
+      requirement_id: followUp.requirement_id ? toValidUuid(followUp.requirement_id) : null,
+      property_id: followUp.property_id ? toValidUuid(followUp.property_id) : null,
+      title: followUp.title,
+      due_at: followUp.due_at,
+      status: followUp.status || "pending",
+      notes: followUp.notes || null,
+      created_at: followUp.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase.from("follow_ups").upsert(payload, { onConflict: "id" });
+    if (error) {
+      console.warn("Notice: Supabase follow_ups table upsert failed:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn("Exception while saving follow-up to Supabase:", err);
+    return false;
+  }
+}
+
+/**
+ * Fetch follow-ups from Supabase PostgreSQL database
+ */
+export async function fetchFollowUpsFromSupabase(orgId: string): Promise<FollowUp[] | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
+  try {
+    const orgUuid = toValidUuid(orgId);
+    const { data, error } = await supabase
+      .from("follow_ups")
+      .select("*")
+      .eq("organization_id", orgUuid)
+      .order("due_at", { ascending: true });
+
+    if (error) {
+      console.warn("Supabase fetch follow_ups error:", error.message);
+      return null;
+    }
+
+    if (!data) return [];
+
+    return data.map((row) => ({
+      id: row.id,
+      organization_id: orgId,
+      customer_id: row.customer_id,
+      requirement_id: row.requirement_id || undefined,
+      property_id: row.property_id || undefined,
+      title: row.title,
+      due_at: row.due_at,
+      status: row.status,
+      notes: row.notes || undefined,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    }));
+  } catch (err) {
+    console.warn("Exception fetching follow_ups from Supabase:", err);
+    return null;
+  }
+}
+

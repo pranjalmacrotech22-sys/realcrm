@@ -17,6 +17,8 @@ import {
   fetchCustomersFromSupabase,
   saveRequirementToSupabase,
   fetchRequirementsFromSupabase,
+  saveFollowUpToSupabase,
+  fetchFollowUpsFromSupabase,
   ensureSupabaseOrg,
   getSupabase,
   toValidUuid,
@@ -423,13 +425,14 @@ export async function updateMemberRole(
 
 // In-memory sync timestamps to avoid redundant remote Supabase round-trips on every navigation
 const syncTimestamps: Record<string, number> = {};
-const SYNC_CACHE_TTL_MS = 60 * 1000; // 60 seconds
+const SYNC_CACHE_TTL_MS = 4 * 1000; // 4 seconds rapid freshness window for multi-container parity
 
 export function invalidateSyncCache(orgId?: string) {
   if (orgId) {
     delete syncTimestamps[`prop-${orgId}`];
     delete syncTimestamps[`cust-${orgId}`];
     delete syncTimestamps[`req-${orgId}`];
+    delete syncTimestamps[`fol-${orgId}`];
   } else {
     for (const k of Object.keys(syncTimestamps)) {
       delete syncTimestamps[k];
@@ -491,6 +494,24 @@ function revalidateRequirementsInBackground(orgId: string) {
             store.requirements.push(r);
           } else {
             store.requirements[idx] = { ...store.requirements[idx], ...r };
+          }
+        }
+        saveToDisk(store);
+      }
+    })
+    .catch(() => {});
+}
+
+function revalidateFollowUpsInBackground(orgId: string) {
+  fetchFollowUpsFromSupabase(orgId)
+    .then((remote) => {
+      if (remote && remote.length > 0) {
+        for (const r of remote) {
+          const idx = store.followUps.findIndex((f) => f.id === r.id);
+          if (idx === -1) {
+            store.followUps.push(r);
+          } else {
+            store.followUps[idx] = { ...store.followUps[idx], ...r };
           }
         }
         saveToDisk(store);
@@ -915,11 +936,49 @@ export async function getCustomers(): Promise<Customer[]> {
 export async function getCustomerById(id: string): Promise<Customer | null> {
   loadFromDisk(store);
   const { orgId } = await resolveCurrentOrgId();
-  const c = store.customers.find((cust) => cust.id === id && cust.organization_id === orgId);
+  let c = store.customers.find((cust) => cust.id === id && cust.organization_id === orgId);
+
+  if (!c) {
+    const supabase = getSupabase();
+    if (supabase) {
+      try {
+        const custUuid = toValidUuid(id);
+        const orgUuid = toValidUuid(orgId);
+        const { data, error } = await supabase
+          .from("customers")
+          .select("*")
+          .eq("id", custUuid)
+          .eq("organization_id", orgUuid)
+          .maybeSingle();
+
+        if (data && !error) {
+          c = {
+            id: data.id,
+            organization_id: orgId,
+            full_name: data.full_name,
+            phone: data.phone,
+            alternate_phone: data.alternate_phone || undefined,
+            email: data.email || undefined,
+            customer_type: data.customer_type,
+            source: data.source || undefined,
+            notes: data.notes || undefined,
+            created_at: data.created_at,
+            updated_at: data.updated_at,
+            archived_at: data.archived_at || undefined,
+          };
+          store.customers.push(c);
+          saveToDisk(store);
+        }
+      } catch (err) {
+        console.warn("Notice: getCustomerById Supabase fallback error:", err);
+      }
+    }
+  }
+
   if (!c) return null;
 
-  const reqs = store.requirements.filter((r) => r.customer_id === c.id && r.organization_id === orgId);
-  const follows = store.followUps.filter((f) => f.customer_id === c.id && f.organization_id === orgId);
+  const reqs = store.requirements.filter((r) => r.customer_id === c!.id && r.organization_id === orgId);
+  const follows = store.followUps.filter((f) => f.customer_id === c!.id && f.organization_id === orgId);
   return {
     ...c,
     requirements_count: reqs.length,
@@ -1028,12 +1087,61 @@ export async function getRequirements(customerId?: string): Promise<Requirement[
 export async function getRequirementById(id: string): Promise<Requirement | null> {
   loadFromDisk(store);
   const { orgId } = await resolveCurrentOrgId();
-  const req = store.requirements.find((r) => r.id === id && r.organization_id === orgId);
+  let req = store.requirements.find((r) => r.id === id && r.organization_id === orgId);
+
+  if (!req) {
+    const supabase = getSupabase();
+    if (supabase) {
+      try {
+        const reqUuid = toValidUuid(id);
+        const orgUuid = toValidUuid(orgId);
+        const { data, error } = await supabase
+          .from("requirements")
+          .select("*")
+          .eq("id", reqUuid)
+          .eq("organization_id", orgUuid)
+          .maybeSingle();
+
+        if (data && !error) {
+          req = {
+            id: data.id,
+            organization_id: orgId,
+            customer_id: data.customer_id,
+            title: data.title,
+            purpose: data.purpose,
+            category: data.category,
+            property_type: data.property_type,
+            min_budget: data.min_budget != null ? Number(data.min_budget) : null,
+            max_budget: Number(data.max_budget),
+            budget_period: data.budget_period,
+            min_area_sqft: data.min_area_sqft != null ? Number(data.min_area_sqft) : null,
+            max_area_sqft: data.max_area_sqft != null ? Number(data.max_area_sqft) : null,
+            min_bhk: data.min_bhk != null ? Number(data.min_bhk) : null,
+            max_bhk: data.max_bhk != null ? Number(data.max_bhk) : null,
+            preferred_furnishing: data.preferred_furnishing,
+            allow_nearby_locations: Boolean(data.allow_nearby_locations),
+            allow_alternate_property_types: Boolean(data.allow_alternate_property_types),
+            allow_alternate_furnishing: Boolean(data.allow_alternate_furnishing),
+            budget_flexibility_percent: Number(data.budget_flexibility_percent || 0),
+            status: data.status,
+            created_at: data.created_at,
+            updated_at: data.updated_at,
+            locations: [],
+          };
+          store.requirements.push(req);
+          saveToDisk(store);
+        }
+      } catch (err) {
+        console.warn("Notice: getRequirementById Supabase fallback error:", err);
+      }
+    }
+  }
+
   if (!req) return null;
 
   return {
     ...req,
-    customer: store.customers.find((c) => c.id === req.customer_id && c.organization_id === orgId),
+    customer: store.customers.find((c) => c.id === req!.customer_id && c.organization_id === orgId),
   };
 }
 
@@ -1076,6 +1184,31 @@ export async function createRequirement(data: Omit<Requirement, "id" | "created_
 export async function getFollowUps(status?: string, customerId?: string): Promise<FollowUp[]> {
   const { orgId } = await resolveCurrentOrgId();
 
+  const cacheKey = `fol-${orgId}`;
+  const now = Date.now();
+  const hasLocal = store.followUps.some((f) => f.organization_id === orgId);
+  const cacheExpired = !syncTimestamps[cacheKey] || now - syncTimestamps[cacheKey] > SYNC_CACHE_TTL_MS;
+
+  if (hasLocal) {
+    if (cacheExpired) {
+      syncTimestamps[cacheKey] = now;
+      revalidateFollowUpsInBackground(orgId);
+    }
+  } else if (cacheExpired) {
+    syncTimestamps[cacheKey] = now;
+    try {
+      const remote = await quickSync(() => fetchFollowUpsFromSupabase(orgId), 1200);
+      if (remote && remote.length > 0) {
+        for (const r of remote) {
+          const idx = store.followUps.findIndex((f) => f.id === r.id);
+          if (idx === -1) store.followUps.push(r);
+          else store.followUps[idx] = { ...store.followUps[idx], ...r };
+        }
+        saveToDisk(store);
+      }
+    } catch {}
+  }
+
   let list = store.followUps.filter((f) => f.organization_id === orgId);
   if (status) {
     list = list.filter((f) => f.status === status);
@@ -1111,6 +1244,14 @@ export async function createFollowUp(data: Omit<FollowUp, "id" | "created_at" | 
 
   store.followUps.unshift(newFollow);
   saveToDisk(store);
+  invalidateSyncCache(newFollow.organization_id);
+
+  try {
+    await saveFollowUpToSupabase(newFollow);
+  } catch (err) {
+    console.warn("Notice: could not save follow-up to Supabase:", err);
+  }
+
   return newFollow;
 }
 
@@ -1124,6 +1265,12 @@ export async function toggleFollowUpStatus(
   follow.status = newStatus;
   follow.updated_at = new Date().toISOString();
   saveToDisk(store);
+  invalidateSyncCache(orgId);
+
+  try {
+    await saveFollowUpToSupabase(follow);
+  } catch {}
+
   return follow;
 }
 

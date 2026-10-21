@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   FileText,
@@ -24,10 +25,21 @@ interface RequirementListViewProps {
 }
 
 export function RequirementListView({ initialRequirements }: RequirementListViewProps) {
-  const [requirements] = useState<Requirement[]>(initialRequirements);
+  const router = useRouter();
+  const [requirements, setRequirements] = useState<Requirement[]>(initialRequirements);
   const [searchQuery, setSearchQuery] = useState("");
   const [purposeFilter, setPurposeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("active");
+
+  useEffect(() => {
+    setRequirements(initialRequirements);
+  }, [initialRequirements]);
+
+  useEffect(() => {
+    const handler = () => router.refresh();
+    window.addEventListener("realcrm:refresh", handler);
+    return () => window.removeEventListener("realcrm:refresh", handler);
+  }, [router]);
 
   const filteredRequirements = useMemo(() => {
     return requirements.filter((req) => {

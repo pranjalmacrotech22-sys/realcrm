@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Users,
@@ -25,9 +26,20 @@ interface CustomerListViewProps {
 }
 
 export function CustomerListView({ initialCustomers }: CustomerListViewProps) {
-  const [customers] = useState<Customer[]>(initialCustomers);
+  const router = useRouter();
+  const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
+
+  useEffect(() => {
+    setCustomers(initialCustomers);
+  }, [initialCustomers]);
+
+  useEffect(() => {
+    const handler = () => router.refresh();
+    window.addEventListener("realcrm:refresh", handler);
+    return () => window.removeEventListener("realcrm:refresh", handler);
+  }, [router]);
 
   const filteredCustomers = useMemo(() => {
     return customers.filter((c) => {

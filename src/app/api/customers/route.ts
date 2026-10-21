@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/auth/session";
 import { createCustomer, getCustomers } from "@/lib/data/store";
 import { customerSchema } from "@/lib/validations";
@@ -26,6 +27,10 @@ export async function POST(request: NextRequest) {
       ...parsed.data,
       organization_id: orgId,
     });
+
+    revalidatePath("/customers");
+    revalidatePath("/dashboard");
+    revalidatePath("/");
 
     return NextResponse.json({
       success: true,

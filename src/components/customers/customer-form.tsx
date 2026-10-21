@@ -55,6 +55,9 @@ export function CustomerForm() {
         throw new Error(result.error || "Failed to create customer");
       }
 
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("realcrm:refresh"));
+      }
       router.push(`/customers/${result.customer.id}`);
       router.refresh();
     } catch (err: unknown) {

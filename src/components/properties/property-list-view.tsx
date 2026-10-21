@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Building2,
@@ -37,9 +38,22 @@ export function PropertyListView({
   initialProperties,
   totalCount,
 }: PropertyListViewProps) {
+  const router = useRouter();
   const [properties, setProperties] = useState<Property[]>(initialProperties);
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
   const [showFilters, setShowFilters] = useState(false);
+
+  // Keep state in sync with server re-renders or navigations
+  useEffect(() => {
+    setProperties(initialProperties);
+  }, [initialProperties]);
+
+  // Listen for global mutation events across the app
+  useEffect(() => {
+    const handler = () => router.refresh();
+    window.addEventListener("realcrm:refresh", handler);
+    return () => window.removeEventListener("realcrm:refresh", handler);
+  }, [router]);
 
   // Filter states
   const [searchQuery, setSearchQuery] = useState("");

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/auth/session";
 import { createProperty, getProperties } from "@/lib/data/store";
 import { propertySchema } from "@/lib/validations";
@@ -28,6 +29,11 @@ export async function POST(request: NextRequest) {
       organization_id: orgId,
       media: media || [],
     });
+
+    revalidatePath("/properties");
+    revalidatePath("/dashboard");
+    revalidatePath("/settings");
+    revalidatePath("/");
 
     return NextResponse.json({
       success: true,

@@ -273,6 +273,9 @@ export function PropertyForm({ initialData, isEditing = false }: PropertyFormPro
           throw new Error(result.error || "Failed to update property");
         }
 
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("realcrm:refresh"));
+        }
         router.push(`/properties/${initialData.id}`);
         router.refresh();
       } else {
@@ -290,6 +293,9 @@ export function PropertyForm({ initialData, isEditing = false }: PropertyFormPro
           throw new Error(result.error || "Failed to create property");
         }
 
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("realcrm:refresh"));
+        }
         router.push(`/properties/${result.property.id}`);
         router.refresh();
       }

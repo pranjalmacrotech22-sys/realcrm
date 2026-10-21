@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   ShieldCheck,
   UserPlus,
@@ -13,7 +14,6 @@ import {
   Lock,
 } from "lucide-react";
 import { Membership, UserRole } from "@/types";
-import { updateMemberRole } from "@/lib/data/store";
 import { formatDate } from "@/lib/utils";
 
 interface TeamManagementViewProps {
@@ -21,10 +21,21 @@ interface TeamManagementViewProps {
 }
 
 export function TeamManagementView({ initialMembers }: TeamManagementViewProps) {
+  const router = useRouter();
   const [members, setMembers] = useState<Membership[]>(initialMembers);
   const [loading, setLoading] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMembers(initialMembers);
+  }, [initialMembers]);
+
+  useEffect(() => {
+    const handler = () => router.refresh();
+    window.addEventListener("realcrm:refresh", handler);
+    return () => window.removeEventListener("realcrm:refresh", handler);
+  }, [router]);
 
   const roleDescriptions: Record<UserRole, string> = {
     owner: "Full workspace administrative control & organization settings",
@@ -39,13 +50,27 @@ export function TeamManagementView({ initialMembers }: TeamManagementViewProps) 
     setError(null);
     setMessage(null);
 
+    // Optimistically update
+    const previous = members;
+    setMembers(members.map((m) => (m.id === memberId ? { ...m, role: newRole } : m)));
+
     try {
-      const updated = await updateMemberRole(memberId, newRole);
-      if (updated) {
-        setMembers(members.map((m) => (m.id === memberId ? { ...m, role: newRole } : m)));
-        setMessage(`Updated role to ${newRole}.`);
+      const res = await fetch("/api/team", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ memberId, role: newRole }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to update role");
       }
+
+      setMessage(`Updated role to ${newRole}.`);
+      window.dispatchEvent(new CustomEvent("realcrm:refresh"));
+      router.refresh();
     } catch (err: unknown) {
+      setMembers(previous);
       setError(err instanceof Error ? err.message : "Failed to update role");
     } finally {
       setLoading(null);
