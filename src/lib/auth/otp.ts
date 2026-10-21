@@ -77,8 +77,8 @@ function getResendConfig(): { apiKey: string | null; fromEmail: string } {
         path.join(process.cwd(), ".env"),
       ];
       for (const p of envPaths) {
-        if (fs.existsSync(p)) {
-          const content = fs.readFileSync(p, "utf-8");
+        if (fs.existsSync(/*turbopackIgnore: true*/ p)) {
+          const content = fs.readFileSync(/*turbopackIgnore: true*/ p, "utf-8");
           const keyMatch = content.match(/^RESEND_API_KEY\s*=\s*["']?([^"'\r\n]+)["']?/m);
           if (keyMatch && keyMatch[1]) {
             apiKey = keyMatch[1].trim();
